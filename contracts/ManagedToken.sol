@@ -8,6 +8,7 @@ contract ManagedToken is ERC20, Ownable {
     mapping(address => bool) private whitelist;
     mapping(address => address[]) private interactions;
     mapping(address => mapping(address => bool)) private hasInteracted;
+    mapping(address => address) public blacklistedBy;
 
     event WalletWhitelisted(address indexed wallet);
     event WalletBlacklisted(address indexed wallet);
@@ -63,24 +64,29 @@ contract ManagedToken is ERC20, Ownable {
         }
     }
 
-    function _updateStateForInteractions(address wallet, bool state) private {
-        // Directly update the state of all wallets that have interacted with wallet
-        for (uint256 i = 0; i < interactions[wallet].length; i++) {
-            address peer = interactions[wallet][i];
-            whitelist[peer] = state;
-            if (state) {
-                emit WalletWhitelisted(peer);
-            } else {
-                emit WalletBlacklisted(peer);
-            }
-        }
+    function _updateStateForInteractions(address wallet, bool state) internal {
+        address[] memory peers = interactions[wallet];
 
-        // Update the state of the wallet itself
-        whitelist[wallet] = state;
-        if (state) {
-            emit WalletWhitelisted(wallet);
-        } else {
-            emit WalletBlacklisted(wallet);
+        for (uint256 i = 0; i < peers.length; i++) {
+            address peer = peers[i];
+
+            // If blacklisting
+            if (!state) {
+                if (whitelist[peer]) {
+                    whitelist[peer] = false;
+                    blacklistedBy[peer] = wallet;
+                    emit WalletBlacklisted(peer);
+                }
+            }
+            // If whitelisting
+            else {
+                // Only whitelist peers blacklisted by this wallet
+                if (!whitelist[peer] && blacklistedBy[peer] == wallet) {
+                    whitelist[peer] = true;
+                    blacklistedBy[peer] = address(0);
+                    emit WalletWhitelisted(peer);
+                }
+            }
         }
     }
 }
